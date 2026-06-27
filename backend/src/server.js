@@ -52,6 +52,19 @@ function normalizeBody(body) {
   };
 }
 
+app.get('/api', async () => ({
+  service: 'crud-backend',
+  status: 'ok',
+  endpoints: {
+    health: 'GET /api/health',
+    listItems: 'GET /api/items?page=1&limit=20&search=',
+    getItem: 'GET /api/items/:id',
+    createItem: 'POST /api/items',
+    updateItem: 'PUT /api/items/:id',
+    deleteItem: 'DELETE /api/items/:id'
+  }
+}));
+
 app.get('/api/health', async () => {
   await pool.query('SELECT 1');
   return { status: 'ok', service: 'crud-backend' };
@@ -70,8 +83,8 @@ app.get('/api/items', {
     }
   }
 }, async (request) => {
-  const page = Number(request.query.page || 1);
-  const limit = Number(request.query.limit || 20);
+  const page = Math.trunc(Number(request.query.page || 1));
+  const limit = Math.trunc(Number(request.query.limit || 20));
   const search = String(request.query.search || '').trim();
   const offset = (page - 1) * limit;
 
@@ -80,7 +93,7 @@ app.get('/api/items', {
 
   if (search) {
     const pattern = `%${search}%`;
-    [rows] = await pool.execute(
+    [rows] = await pool.query(
       `SELECT id, name, description, price, quantity, created_at, updated_at
        FROM items
        WHERE name LIKE ? OR description LIKE ?
@@ -93,7 +106,7 @@ app.get('/api/items', {
       [pattern, pattern]
     );
   } else {
-    [rows] = await pool.execute(
+    [rows] = await pool.query(
       `SELECT id, name, description, price, quantity, created_at, updated_at
        FROM items
        ORDER BY id DESC
