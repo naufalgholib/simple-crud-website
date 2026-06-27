@@ -1,40 +1,81 @@
-version: "3.8"
 services:
-  db:
-    image: mysql:8.0
-    container_name: crud-mysql
+  database:
+    image: mysql:8.4
+    container_name: crud-database
+    restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: cruddb
-    ports:
-      - "3306:3306"
+      MYSQL_DATABASE: crud_db
+      MYSQL_USER: ${MYSQL_USER:-crud_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-crud_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-256M}
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-200}
     volumes:
-      - ./db:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - crud-network
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     container_name: crud-backend
+    restart: unless-stopped
     environment:
-      DB_HOST: db
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      DB_HOST: database
       DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: rootpass
-      DB_NAME: cruddb
-      PORT: 4000
-    ports:
-      - "4000:4000"
+      DB_NAME: crud_db
+      DB_USER: ${MYSQL_USER:-crud_user}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-crud_password}
+      DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-20}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
     depends_on:
-      - db
+      database:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - crud-network
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
     container_name: crud-frontend
-    environment:
-      VITE_API_URL: http://localhost:4000
-    ports:
-      - "5173:5173"
+    restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+        restart: true
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    networks:
+      - crud-network
 
 volumes:
   mysql_data:
+
+networks:
+  crud-network:
+    driver: bridge

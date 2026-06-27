@@ -1,13 +1,17 @@
 {
-  "name": "crud-backend",
+  "name": "simple-crud-backend",
   "version": "1.0.0",
-  "main": "server.js",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node src/index.js",
+    "check": "node --check src/index.js && node --check src/server.js"
   },
   "dependencies": {
-    "cors": "^2.8.4",
-    "express": "^4.19.0",
-    "mysql2": "^3.3.0"
+    "fastify": "5.6.1",
+    "mysql2": "3.15.3"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
