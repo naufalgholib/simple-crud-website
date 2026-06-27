@@ -1,0 +1,13 @@
+{
+  "name": "crud-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.4",
+    "express": "^4.19.0",
+    "mysql2": "^3.3.0"
+  }
+}

@@ -1,0 +1,40 @@
+version: "3.8"
+services:
+  db:
+    image: mysql:8.0
+    container_name: crud-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: cruddb
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./db:/var/lib/mysql
+
+  backend:
+    build: ./backend
+    container_name: crud-backend
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: rootpass
+      DB_NAME: cruddb
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    container_name: crud-frontend
+    environment:
+      VITE_API_URL: http://localhost:4000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
