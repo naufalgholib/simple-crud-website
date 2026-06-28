@@ -67,9 +67,10 @@ ANALYZE TABLE items;
 SELECT
   COUNT(*) AS total_rows,
   MIN(id) AS minimum_id,
-  MAX(id) AS maximum_id,
-  AUTO_INCREMENT
-FROM items
-JOIN information_schema.tables
-  ON table_schema = DATABASE()
- AND table_name = 'items';
+  MAX(id) AS maximum_id
+FROM items;
+
+SELECT AUTO_INCREMENT
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+  AND table_name = 'items';
