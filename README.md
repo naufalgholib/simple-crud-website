@@ -70,6 +70,65 @@ Parameter yang berguna untuk eksperimen:
 
 Untuk eksperimen ilmiah, pertahankan seluruh parameter ini sama pada setiap skenario kecuali parameter yang memang menjadi variabel penelitian.
 
+## Baseline database 200.000 record
+
+File `database/baseline-200k.sql` membuat dataset deterministik tepat 200.000 baris untuk skenario read-only dan mixed workload.
+
+Karakteristik baseline:
+
+- ID kontinu dari `1` sampai `200000`
+- isi data identik pada setiap VM
+- description berukuran tetap 256 karakter
+- timestamp dan nilai numerik dihasilkan secara deterministik
+- `AUTO_INCREMENT` setelah import menjadi `200001`
+
+> **Peringatan:** proses restore menjalankan `TRUNCATE TABLE items`, sehingga semua data existing pada tabel tersebut akan dihapus.
+
+Setelah mengambil update terbaru dari GitHub:
+
+```bash
+git pull --ff-only
+docker compose up -d
+sh scripts/restore-baseline-200k.sh
+```
+
+Untuk otomatis menyetujui konfirmasi, misalnya dalam script eksperimen:
+
+```bash
+FORCE=1 sh scripts/restore-baseline-200k.sh
+```
+
+Import manual tanpa helper script:
+
+```bash
+docker compose exec -T database sh -ec \
+  'mysql --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" crud_db' \
+  < database/baseline-200k.sql
+```
+
+Verifikasi:
+
+```bash
+docker compose exec -T database sh -ec \
+  'mysql --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" -e \
+  "SELECT COUNT(*) AS total, MIN(id) AS min_id, MAX(id) AS max_id FROM crud_db.items;"'
+```
+
+Hasil yang diharapkan:
+
+```text
+total   min_id   max_id
+200000  1        200000
+```
+
+Untuk JMeter read-only dan mixed workload, gunakan range ID baseline tetap:
+
+```text
+GET /api/items/${__Random(1,200000)}
+```
+
+Data baru yang tercipta pada mixed workload memiliki ID mulai dari `200001`. Range GET tetap `1–200000` agar working set baca identik pada seluruh pengulangan.
+
 ## REST API
 
 | Method | Endpoint | Fungsi |
@@ -146,7 +205,9 @@ Jalankan JMeter dari mesin terpisah bila tujuan penelitian adalah mengukur kapas
 ├── backend/
 ├── benchmark/simple-crud.jmx
 ├── database/init.sql
+├── database/baseline-200k.sql
 ├── frontend/
+├── scripts/restore-baseline-200k.sh
 ├── docker-compose.yml
 └── README.md
 ```
