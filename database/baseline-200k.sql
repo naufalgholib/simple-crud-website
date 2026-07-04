@@ -1,7 +1,7 @@
--- Deterministic 200,000-row baseline for read-only and mixed workloads.
+-- Deterministic 250,000-row baseline for read-only and mixed workloads.
 --
 -- WARNING: importing this file TRUNCATES crud_db.items first.
--- The generated primary keys are continuous from 1 through 200000.
+-- The generated primary keys are continuous from 1 through 250000.
 -- The payload is deterministic so every VM receives the same dataset.
 
 SET NAMES utf8mb4;
@@ -42,7 +42,7 @@ FROM (
       + tens.n * 10
       + ones.n AS id
   FROM
-    (SELECT 0 AS n UNION ALL SELECT 1) AS hundred_thousands
+    (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2) AS hundred_thousands
   CROSS JOIN
     (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
      UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) AS ten_thousands
@@ -59,9 +59,10 @@ FROM (
     (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
      UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) AS ones
 ) AS sequence
+WHERE sequence.id <= 250000
 ORDER BY sequence.id;
 
-ALTER TABLE items AUTO_INCREMENT = 200001;
+ALTER TABLE items AUTO_INCREMENT = 250001;
 ANALYZE TABLE items;
 
 SELECT
