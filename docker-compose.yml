@@ -11,8 +11,8 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-256M}
-      - --max-connections=${MYSQL_MAX_CONNECTIONS:-200}
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-768M}
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-151}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
@@ -41,7 +41,7 @@ services:
       DB_NAME: crud_db
       DB_USER: ${MYSQL_USER:-crud_user}
       DB_PASSWORD: ${MYSQL_PASSWORD:-crud_password}
-      DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-20}
+      DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-10}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-0}
       LOG_LEVEL: ${LOG_LEVEL:-warn}
     depends_on:
