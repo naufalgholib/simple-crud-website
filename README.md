@@ -126,13 +126,15 @@ Parameter yang tersedia:
 | `MYSQL_PASSWORD` | `crud_password` | Password user database aplikasi |
 | `MYSQL_ROOT_PASSWORD` | `root_password` | Password root MySQL |
 | `MYSQL_PORT` | `3306` | Port MySQL pada host |
-| `MYSQL_MAX_CONNECTIONS` | `200` | Batas koneksi MySQL |
-| `MYSQL_INNODB_BUFFER_POOL_SIZE` | `256M` | Ukuran InnoDB buffer pool |
-| `DB_CONNECTION_LIMIT` | `20` | Ukuran pool koneksi MySQL per worker backend |
+| `MYSQL_MAX_CONNECTIONS` | `151` | Batas koneksi MySQL |
+| `MYSQL_INNODB_BUFFER_POOL_SIZE` | `768M` | Ukuran InnoDB buffer pool |
+| `DB_CONNECTION_LIMIT` | `10` | Ukuran pool koneksi MySQL per worker backend |
 | `WEB_CONCURRENCY` | `0` | `0` berarti otomatis mengikuti jumlah CPU yang terlihat oleh container; angka positif mengunci jumlah worker |
 | `LOG_LEVEL` | `warn` | Level log Fastify |
 | `BACKEND_PORT` | `3000` | Port backend pada host |
 | `FRONTEND_PORT` | `8080` | Port frontend pada host |
+
+Default runtime di atas dipilih agar cocok untuk VM kecil seperti 2 vCPU / 4GB RAM dan tetap menjaga fokus benchmark pada dampak kebijakan CPU, bukan tuning database yang terlalu agresif.
 
 Untuk eksperimen ilmiah, pertahankan semua parameter tetap sama pada setiap skenario, kecuali parameter yang memang menjadi variabel penelitian.
 
@@ -318,12 +320,10 @@ Setiap worker membuat connection pool sendiri ke MySQL. Karena itu total potensi
 jumlah_worker × DB_CONNECTION_LIMIT
 ```
 
-Contoh:
+Contoh pada VM 2 vCPU dengan default `WEB_CONCURRENCY=0` dan `DB_CONNECTION_LIMIT=10`:
 
 ```text
-WEB_CONCURRENCY=4
-DB_CONNECTION_LIMIT=20
-Total potensi koneksi backend = 4 × 20 = 80 koneksi
+2 worker × 10 connection = maksimal sekitar 20 koneksi backend
 ```
 
 Pastikan `MYSQL_MAX_CONNECTIONS` cukup besar untuk menampung total koneksi backend, koneksi admin, dan koneksi tambahan saat benchmark atau debugging.
