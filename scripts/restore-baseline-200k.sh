@@ -19,7 +19,7 @@ fi
 
 cat <<'EOF'
 WARNING: this operation deletes all existing rows from crud_db.items
-and replaces them with the deterministic 200,000-row benchmark baseline.
+and replaces them with the deterministic 250,000-row benchmark baseline.
 EOF
 
 if [ "${FORCE:-0}" != "1" ]; then
@@ -31,7 +31,7 @@ if [ "${FORCE:-0}" != "1" ]; then
   esac
 fi
 
-echo 'Importing the 200,000-row baseline...'
+echo 'Importing the 250,000-row baseline...'
 docker compose exec -T database sh -ec \
   'mysql --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" crud_db' \
   < "$SQL_FILE"
@@ -41,4 +41,4 @@ docker compose exec -T database sh -ec \
   'mysql --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e \
    "SELECT COUNT(*), MIN(id), MAX(id) FROM crud_db.items;"'
 
-echo 'Baseline restore completed. Expected result: 200000  1  200000'
+echo 'Baseline restore completed. Expected result: 250000  1  250000'
