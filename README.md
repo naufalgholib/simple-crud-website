@@ -1,35 +1,89 @@
 # Simple CRUD Benchmark
 
-Aplikasi CRUD sederhana untuk pengujian performa menggunakan Apache JMeter.
+Aplikasi CRUD sederhana berbasis Docker untuk pengujian performa menggunakan Apache JMeter. Repo ini berisi frontend minimal, REST API backend, database MySQL, script smoke test, script restore baseline, dan test plan JMeter dasar.
+
+## Kondisi repo saat ini
+
+- Aplikasi dijalankan menggunakan Docker Compose dengan 3 service utama: `database`, `backend`, dan `frontend`.
+- Database menggunakan MySQL 8.4 dan schema utama bernama `crud_db`.
+- Tabel utama adalah `items` dengan kolom `id`, `name`, `description`, `price`, `quantity`, `created_at`, dan `updated_at`.
+- Backend menyediakan REST API CRUD di path `/api/*`.
+- Frontend Vue disajikan oleh Nginx pada port `8080` dan meneruskan request `/api/*` ke backend.
+- File `database/baseline-200k.sql` saat ini menghasilkan baseline deterministik **250.000 row**. Nama file masih memakai `200k` agar kompatibel dengan script existing, tetapi isi dataset sudah 250k.
+- Script `scripts/restore-baseline-200k.sh` melakukan restore baseline 250k ke tabel `crud_db.items`.
 
 ## Stack
 
-- Frontend: Vue 3, dibangun dengan Vite dan disajikan oleh Nginx
-- Backend: Node.js 24 LTS + Fastify
-- Database: MySQL 8.4 LTS (InnoDB)
+- Frontend: Vue 3, Vite, dan Nginx
+- Backend: Node.js 24 + Fastify + `mysql2`
+- Database: MySQL 8.4 LTS / InnoDB
 - Orkestrasi: Docker Compose
+- Benchmark: Apache JMeter 5.6.x
+
+## Struktur proyek
+
+```text
+.
+├── backend/
+│   ├── Dockerfile
+│   ├── package.json
+│   └── src/
+│       ├── index.js
+│       └── server.js
+├── benchmark/
+│   └── simple-crud.jmx
+├── database/
+│   ├── init.sql
+│   └── baseline-200k.sql
+├── frontend/
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── package.json
+│   └── src/
+│       └── App.vue
+├── scripts/
+│   ├── smoke-test.sh
+│   └── restore-baseline-200k.sh
+├── .env.example
+├── docker-compose.yml
+└── README.md
+```
 
 ## Menjalankan aplikasi
 
-Persyaratan: Docker Engine dan Docker Compose plugin. Kredensial bawaan hanya ditujukan untuk lab/benchmark, bukan deployment publik.
+Persyaratan:
+
+- Docker Engine
+- Docker Compose plugin
+
+Kredensial bawaan hanya ditujukan untuk lab/benchmark, bukan deployment publik.
 
 ```bash
 docker compose up --build -d
 ```
 
-Akses:
+Akses service:
 
-- Website: `http://localhost:8080`
-- REST API langsung: `http://localhost:3000/api`
-- Health check: `http://localhost:3000/api/health`
-- MySQL: `localhost:3306`
+| Service | URL / Port | Keterangan |
+|---|---:|---|
+| Frontend | `http://localhost:8080` | UI Vue melalui Nginx |
+| Backend API | `http://localhost:3000/api` | REST API langsung ke Fastify |
+| Health check | `http://localhost:3000/api/health` | Cek backend dan database |
+| MySQL | `localhost:3306` | Port database dari host |
 
-Lihat status dan jalankan smoke test CRUD:
+Cek status container:
 
 ```bash
 docker compose ps
+```
+
+Jalankan smoke test CRUD:
+
+```bash
 ./scripts/smoke-test.sh
 ```
+
+Smoke test akan menunggu API sehat, membuat 1 item sementara, membaca item tersebut, update, lalu delete kembali.
 
 Lihat log:
 
@@ -37,54 +91,69 @@ Lihat log:
 docker compose logs -f
 ```
 
-Hentikan aplikasi tanpa menghapus data:
+Hentikan aplikasi tanpa menghapus data MySQL:
 
 ```bash
 docker compose down
 ```
 
-Hentikan dan reset seluruh data MySQL:
+Hentikan aplikasi dan hapus volume database:
 
 ```bash
 docker compose down -v
 ```
 
-## Konfigurasi opsional
+## Konfigurasi `.env`
 
-Salin `.env.example` menjadi `.env`, lalu ubah nilainya sesuai kebutuhan.
+Salin `.env.example` menjadi `.env` bila ingin mengubah parameter default.
 
 ```bash
 cp .env.example .env
 docker compose up --build -d
 ```
 
-Parameter yang berguna untuk eksperimen:
+Parameter yang tersedia:
 
-- Nama database ditetapkan sebagai `crud_db` agar skrip inisialisasi tetap deterministik.
-- `WEB_CONCURRENCY=0`: otomatis membuat worker sesuai jumlah CPU yang terlihat di container; isi angka positif untuk mengunci jumlah worker.
-- `DB_CONNECTION_LIMIT`: ukuran connection pool **per worker** backend.
-- `LOG_LEVEL=warn`: menghindari request log per transaksi yang dapat mengganggu hasil benchmark.
-- `MYSQL_MAX_CONNECTIONS`: batas koneksi MySQL
-- `MYSQL_INNODB_BUFFER_POOL_SIZE`: ukuran InnoDB buffer pool
-- `BACKEND_PORT`, `FRONTEND_PORT`, dan `MYSQL_PORT`: port host
+| Parameter | Default | Fungsi |
+|---|---:|---|
+| `MYSQL_USER` | `crud_user` | User database aplikasi |
+| `MYSQL_PASSWORD` | `crud_password` | Password user database aplikasi |
+| `MYSQL_ROOT_PASSWORD` | `root_password` | Password root MySQL |
+| `MYSQL_PORT` | `3306` | Port MySQL pada host |
+| `MYSQL_MAX_CONNECTIONS` | `200` | Batas koneksi MySQL |
+| `MYSQL_INNODB_BUFFER_POOL_SIZE` | `256M` | Ukuran InnoDB buffer pool |
+| `DB_CONNECTION_LIMIT` | `20` | Ukuran pool koneksi MySQL per worker backend |
+| `WEB_CONCURRENCY` | `0` | `0` berarti otomatis mengikuti jumlah CPU yang terlihat oleh container; angka positif mengunci jumlah worker |
+| `LOG_LEVEL` | `warn` | Level log Fastify |
+| `BACKEND_PORT` | `3000` | Port backend pada host |
+| `FRONTEND_PORT` | `8080` | Port frontend pada host |
 
-Untuk eksperimen ilmiah, pertahankan seluruh parameter ini sama pada setiap skenario kecuali parameter yang memang menjadi variabel penelitian.
+Untuk eksperimen ilmiah, pertahankan semua parameter tetap sama pada setiap skenario, kecuali parameter yang memang menjadi variabel penelitian.
 
-## Baseline database 200.000 record
+## Database dan baseline 250.000 row
 
-File `database/baseline-200k.sql` membuat dataset deterministik tepat 200.000 baris untuk skenario read-only dan mixed workload.
+Saat container database pertama kali dibuat, file `database/init.sql` akan membuat database `crud_db`, membuat tabel `items`, dan memasukkan 3 sample item awal.
+
+Untuk skenario read-only dan mixed workload, gunakan baseline deterministik dari file:
+
+```text
+database/baseline-200k.sql
+```
+
+> Catatan: nama file masih `baseline-200k.sql`, tetapi isi file saat ini menghasilkan **250.000 row**.
 
 Karakteristik baseline:
 
-- ID kontinu dari `1` sampai `200000`
-- isi data identik pada setiap VM
-- description berukuran tetap 256 karakter
-- timestamp dan nilai numerik dihasilkan secara deterministik
-- `AUTO_INCREMENT` setelah import menjadi `200001`
+- Total row: `250000`
+- ID kontinu dari `1` sampai `250000`
+- Isi data deterministik sehingga setiap VM mendapatkan dataset yang identik
+- `description` dibuat berukuran tetap 256 karakter
+- Timestamp dan nilai numerik dihasilkan secara deterministik
+- Setelah import, `AUTO_INCREMENT` menjadi `250001`
 
-> **Peringatan:** proses restore menjalankan `TRUNCATE TABLE items`, sehingga semua data existing pada tabel tersebut akan dihapus.
+> **Peringatan:** proses restore menjalankan `TRUNCATE TABLE items`, sehingga semua data existing pada tabel `crud_db.items` akan dihapus.
 
-Setelah mengambil update terbaru dari GitHub:
+Restore baseline:
 
 ```bash
 git pull --ff-only
@@ -92,7 +161,7 @@ docker compose up -d
 sh scripts/restore-baseline-200k.sh
 ```
 
-Untuk otomatis menyetujui konfirmasi, misalnya dalam script eksperimen:
+Restore baseline tanpa prompt konfirmasi, misalnya untuk automation eksperimen:
 
 ```bash
 FORCE=1 sh scripts/restore-baseline-200k.sh
@@ -106,7 +175,7 @@ docker compose exec -T database sh -ec \
   < database/baseline-200k.sql
 ```
 
-Verifikasi:
+Verifikasi jumlah row:
 
 ```bash
 docker compose exec -T database sh -ec \
@@ -118,29 +187,69 @@ Hasil yang diharapkan:
 
 ```text
 total   min_id   max_id
-200000  1        200000
+250000  1        250000
+```
+
+Cek nilai `AUTO_INCREMENT`:
+
+```bash
+docker compose exec -T database sh -ec \
+  'mysql --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" -e \
+  "SELECT AUTO_INCREMENT FROM information_schema.tables WHERE table_schema = '\''crud_db'\'' AND table_name = '\''items'\'';"'
+```
+
+Hasil yang diharapkan:
+
+```text
+AUTO_INCREMENT
+250001
 ```
 
 Untuk JMeter read-only dan mixed workload, gunakan range ID baseline tetap:
 
 ```text
-GET /api/items/${__Random(1,200000)}
+GET /api/items/${__Random(1,250000)}
 ```
 
-Data baru yang tercipta pada mixed workload memiliki ID mulai dari `200001`. Range GET tetap `1–200000` agar working set baca identik pada seluruh pengulangan.
+Jika mixed workload juga membuat data baru, data baru akan mulai dari ID `250001`. Untuk menjaga working set baca tetap identik pada seluruh pengulangan, range GET sebaiknya tetap `1–250000`.
 
 ## REST API
 
+Base URL backend langsung:
+
+```text
+http://localhost:3000/api
+```
+
+Jika request melewati frontend/Nginx, gunakan:
+
+```text
+http://localhost:8080/api
+```
+
+Endpoint yang tersedia:
+
 | Method | Endpoint | Fungsi |
 |---|---|---|
-| GET | `/api/health` | Health check backend dan database |
-| GET | `/api/items?page=1&limit=20&search=` | Daftar item dengan pagination |
-| GET | `/api/items/:id` | Mengambil satu item |
-| POST | `/api/items` | Membuat item |
-| PUT | `/api/items/:id` | Memperbarui item |
-| DELETE | `/api/items/:id` | Menghapus item |
+| `GET` | `/api` | Informasi service dan daftar endpoint |
+| `GET` | `/api/health` | Health check backend dan database |
+| `GET` | `/api/items?page=1&limit=20&search=` | Daftar item dengan pagination dan pencarian |
+| `GET` | `/api/items/:id` | Mengambil satu item berdasarkan ID |
+| `POST` | `/api/items` | Membuat item baru |
+| `PUT` | `/api/items/:id` | Memperbarui item berdasarkan ID |
+| `DELETE` | `/api/items/:id` | Menghapus item berdasarkan ID |
 
-Contoh body POST/PUT:
+Query parameter untuk `GET /api/items`:
+
+| Parameter | Default | Batas | Keterangan |
+|---|---:|---:|---|
+| `page` | `1` | minimum `1` | Nomor halaman |
+| `limit` | `20` | `1–100` | Jumlah data per halaman |
+| `search` | kosong | max 150 karakter | Mencari pada `name` atau `description` |
+
+Urutan default list adalah `id DESC`. Saat ini backend belum menyediakan parameter `sort` atau `order`.
+
+Contoh body `POST` atau `PUT`:
 
 ```json
 {
@@ -151,7 +260,7 @@ Contoh body POST/PUT:
 }
 ```
 
-Contoh curl:
+Contoh create item:
 
 ```bash
 curl -X POST http://localhost:3000/api/items \
@@ -159,9 +268,71 @@ curl -X POST http://localhost:3000/api/items \
   -d '{"name":"Item Test","description":"Benchmark","price":10000,"quantity":10}'
 ```
 
+Contoh read item:
+
+```bash
+curl http://localhost:3000/api/items/1
+```
+
+Contoh list item:
+
+```bash
+curl 'http://localhost:3000/api/items?page=1&limit=20&search=Benchmark'
+```
+
+## Frontend
+
+Frontend tersedia pada:
+
+```text
+http://localhost:8080
+```
+
+Fitur UI saat ini:
+
+- Menampilkan daftar item dengan pagination
+- Search berdasarkan nama atau deskripsi
+- Tambah item
+- Edit item
+- Hapus item
+- Menampilkan total record
+
+Nginx pada container frontend meneruskan request `/api/*` ke service backend internal `backend:3000`.
+
+## Backend worker dan koneksi database
+
+Backend dijalankan melalui `backend/src/index.js` menggunakan Node.js cluster.
+
+Perilaku `WEB_CONCURRENCY`:
+
+- `WEB_CONCURRENCY=0`: jumlah worker otomatis mengikuti jumlah CPU yang terlihat oleh container.
+- `WEB_CONCURRENCY=<angka positif>`: jumlah worker dikunci sesuai angka tersebut.
+
+Setiap worker membuat connection pool sendiri ke MySQL. Karena itu total potensi koneksi backend kira-kira:
+
+```text
+jumlah_worker × DB_CONNECTION_LIMIT
+```
+
+Contoh:
+
+```text
+WEB_CONCURRENCY=4
+DB_CONNECTION_LIMIT=20
+Total potensi koneksi backend = 4 × 20 = 80 koneksi
+```
+
+Pastikan `MYSQL_MAX_CONNECTIONS` cukup besar untuk menampung total koneksi backend, koneksi admin, dan koneksi tambahan saat benchmark atau debugging.
+
 ## Menjalankan Apache JMeter
 
-File test plan tersedia di `benchmark/simple-crud.jmx`. Plan tersebut menjalankan alur berikut pada setiap iterasi:
+Test plan dasar tersedia di:
+
+```text
+benchmark/simple-crud.jmx
+```
+
+Plan tersebut menjalankan alur CRUD penuh pada setiap iterasi:
 
 1. Create item
 2. Read item yang baru dibuat
@@ -183,31 +354,45 @@ jmeter -n \
   -e -o benchmark/report
 ```
 
-Untuk benchmark backend murni, gunakan port `3000`. Untuk menyertakan Nginx pada jalur request, gunakan port `8080` karena Nginx meneruskan `/api/*` ke backend.
+Gunakan port sesuai jalur benchmark:
 
-Jalankan JMeter dari mesin terpisah bila tujuan penelitian adalah mengukur kapasitas server. GUI JMeter sebaiknya hanya dipakai untuk menyusun atau memeriksa test plan, bukan menjalankan load test besar.
+- Port `3000`: benchmark backend langsung.
+- Port `8080`: benchmark melewati Nginx/frontend proxy untuk request `/api/*`.
 
-## Catatan benchmark
+Jalankan JMeter dari mesin terpisah bila tujuan penelitian adalah mengukur kapasitas server. GUI JMeter sebaiknya hanya digunakan untuk menyusun atau memeriksa test plan, bukan untuk menjalankan load test besar.
+
+## Catatan skenario benchmark
+
+### Write-heavy
+
+- Mulai dari database kosong atau kondisi yang sudah ditentukan.
+- Fokus pada endpoint `POST /api/items`.
+- Jika ingin setiap run benar-benar bersih, gunakan `TRUNCATE TABLE items` atau restore kondisi awal sebelum run berikutnya.
+
+### Read-heavy
+
+- Restore baseline 250k terlebih dahulu.
+- Gunakan random GET pada ID `1–250000`.
+- Contoh endpoint JMeter:
+
+```text
+/api/items/${__Random(1,250000)}
+```
+
+### Mixed read/write
+
+- Restore baseline 250k terlebih dahulu.
+- Untuk pola 80/20, gunakan 80% request read terhadap ID `1–250000` dan 20% request write.
+- Data hasil write akan memakai ID mulai `250001`, tetapi range read sebaiknya tetap `1–250000` agar working set baca stabil.
+
+## Catatan benchmark umum
 
 - Tunggu semua container berstatus sehat sebelum mulai.
 - Lakukan warm-up sebelum pengukuran utama.
-- Gunakan durasi, ramp-up, jumlah thread, dataset, dan urutan endpoint yang identik pada tiap skenario.
+- Gunakan durasi, ramp-up, jumlah thread, dataset, dan urutan endpoint yang identik pada setiap skenario.
 - Tentukan sejak awal apakah `WEB_CONCURRENCY` mengikuti jumlah vCPU (`0`) atau dikunci; jangan mencampur kedua metode dalam satu kelompok eksperimen.
 - Jangan mengaktifkan log debug saat benchmark.
 - Catat versi image dengan `docker compose images`.
 - Untuk reproduktibilitas maksimal, pin image ke digest setelah environment final ditetapkan.
 - Reset volume hanya ketika setiap skenario memang harus mulai dari database kosong.
-
-## Struktur proyek
-
-```text
-.
-├── backend/
-├── benchmark/simple-crud.jmx
-├── database/init.sql
-├── database/baseline-200k.sql
-├── frontend/
-├── scripts/restore-baseline-200k.sh
-├── docker-compose.yml
-└── README.md
-```
+- Pisahkan mesin JMeter dari mesin target bila ingin hasil kapasitas aplikasi lebih akurat.
