@@ -1,6 +1,6 @@
 # Simple CRUD Benchmark
 
-Aplikasi CRUD sederhana berbasis Docker untuk pengujian performa menggunakan Apache JMeter. Repo ini berisi frontend minimal, REST API backend, database MySQL, script smoke test, script restore baseline, dan test plan JMeter dasar.
+Aplikasi CRUD sederhana berbasis Docker untuk pengujian performa menggunakan Apache JMeter. Repo ini berisi frontend minimal, REST API backend, database MySQL, script smoke test, script restore baseline, dan beberapa test plan JMeter untuk skenario write-heavy, read-heavy, dan mixed read/write workload.
 
 ## Kondisi repo saat ini
 
@@ -9,8 +9,12 @@ Aplikasi CRUD sederhana berbasis Docker untuk pengujian performa menggunakan Apa
 - Tabel utama adalah `items` dengan kolom `id`, `name`, `description`, `price`, `quantity`, `created_at`, dan `updated_at`.
 - Backend menyediakan REST API CRUD di path `/api/*`.
 - Frontend Vue disajikan oleh Nginx pada port `8080` dan meneruskan request `/api/*` ke backend.
-- File `database/baseline-200k.sql` saat ini menghasilkan baseline deterministik **250.000 row**. Nama file masih memakai `200k` agar kompatibel dengan script existing, tetapi isi dataset sudah 250k.
-- Script `scripts/restore-baseline-200k.sh` melakukan restore baseline 250k ke tabel `crud_db.items`.
+- File `database/baseline-250k.sql` menghasilkan baseline deterministik **250.000 row**.
+- Script `scripts/restore-baseline-250k.sh` melakukan restore baseline 250k ke tabel `crud_db.items`.
+- Test plan JMeter utama berada di folder `benchmark/`:
+  - `create-write-heavy.jmx`
+  - `read-only-random-id.jmx`
+  - `mixed-read-write.jmx`
 
 ## Stack
 
@@ -31,10 +35,12 @@ Aplikasi CRUD sederhana berbasis Docker untuk pengujian performa menggunakan Apa
 │       ├── index.js
 │       └── server.js
 ├── benchmark/
-│   └── simple-crud.jmx
+│   ├── create-write-heavy.jmx
+│   ├── mixed-read-write.jmx
+│   └── read-only-random-id.jmx
 ├── database/
 │   ├── init.sql
-│   └── baseline-200k.sql
+│   └── baseline-250k.sql
 ├── frontend/
 │   ├── Dockerfile
 │   ├── nginx.conf
@@ -43,7 +49,7 @@ Aplikasi CRUD sederhana berbasis Docker untuk pengujian performa menggunakan Apa
 │       └── App.vue
 ├── scripts/
 │   ├── smoke-test.sh
-│   └── restore-baseline-200k.sh
+│   └── restore-baseline-250k.sh
 ├── .env.example
 ├── docker-compose.yml
 └── README.md
@@ -137,10 +143,8 @@ Saat container database pertama kali dibuat, file `database/init.sql` akan membu
 Untuk skenario read-only dan mixed workload, gunakan baseline deterministik dari file:
 
 ```text
-database/baseline-200k.sql
+database/baseline-250k.sql
 ```
-
-> Catatan: nama file masih `baseline-200k.sql`, tetapi isi file saat ini menghasilkan **250.000 row**.
 
 Karakteristik baseline:
 
@@ -158,13 +162,13 @@ Restore baseline:
 ```bash
 git pull --ff-only
 docker compose up -d
-sh scripts/restore-baseline-200k.sh
+sh scripts/restore-baseline-250k.sh
 ```
 
 Restore baseline tanpa prompt konfirmasi, misalnya untuk automation eksperimen:
 
 ```bash
-FORCE=1 sh scripts/restore-baseline-200k.sh
+FORCE=1 sh scripts/restore-baseline-250k.sh
 ```
 
 Import manual tanpa helper script:
@@ -172,7 +176,7 @@ Import manual tanpa helper script:
 ```bash
 docker compose exec -T database sh -ec \
   'mysql --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" crud_db' \
-  < database/baseline-200k.sql
+  < database/baseline-250k.sql
 ```
 
 Verifikasi jumlah row:
@@ -326,33 +330,15 @@ Pastikan `MYSQL_MAX_CONNECTIONS` cukup besar untuk menampung total koneksi backe
 
 ## Menjalankan Apache JMeter
 
-Test plan dasar tersedia di:
+Test plan utama tersedia di folder `benchmark/`:
 
-```text
-benchmark/simple-crud.jmx
-```
+| Skenario | File test plan | Kondisi awal database |
+|---|---|---|
+| Write-heavy | `benchmark/create-write-heavy.jmx` | Database kosong |
+| Read-heavy | `benchmark/read-only-random-id.jmx` | Restore baseline 250k |
+| Mixed read/write | `benchmark/mixed-read-write.jmx` | Restore baseline 250k |
 
-Plan tersebut menjalankan alur CRUD penuh pada setiap iterasi:
-
-1. Create item
-2. Read item yang baru dibuat
-3. Update item
-4. List items
-5. Delete item
-
-Contoh mode CLI/non-GUI:
-
-```bash
-jmeter -n \
-  -t benchmark/simple-crud.jmx \
-  -Jhost=127.0.0.1 \
-  -Jport=3000 \
-  -Jthreads=50 \
-  -Jrampup=10 \
-  -Jduration=120 \
-  -l benchmark/results.jtl \
-  -e -o benchmark/report
-```
+Contoh di bawah menggunakan lokasi plan `/root/jmeter-test/plans/`. Jika repo atau file `.jmx` berada di path lain, sesuaikan nilai `-t`.
 
 Gunakan port sesuai jalur benchmark:
 
@@ -361,28 +347,127 @@ Gunakan port sesuai jalur benchmark:
 
 Jalankan JMeter dari mesin terpisah bila tujuan penelitian adalah mengukur kapasitas server. GUI JMeter sebaiknya hanya digunakan untuk menyusun atau memeriksa test plan, bukan untuk menjalankan load test besar.
 
+### Persiapan database kosong untuk write-heavy
+
+Sebelum menjalankan write-heavy test, atau sebelum mengulang run ke-2, ke-3, dan seterusnya, pastikan tabel `items` kosong agar setiap run mulai dari kondisi yang sama.
+
+```bash
+docker compose exec -T database sh -ec \
+  'mysql --protocol=socket -uroot -p"$MYSQL_ROOT_PASSWORD" \
+  -e "TRUNCATE TABLE crud_db.items;"'
+```
+
+> Catatan: service Compose bernama `database`, sedangkan container name-nya `crud-database`.
+
+### Write-heavy workload
+
+Contoh menjalankan write-heavy test dengan 100 threads, ramp-up 60 detik, dan durasi total 600 detik:
+
+```bash
+jmeter -n \
+  -t /root/jmeter-test/plans/create-write-heavy.jmx \
+  -Jprotocol=http \
+  -Jhost={IP} \
+  -Jport=3000 \
+  -Jthreads=100 \
+  -Jrampup=60 \
+  -Jduration=600 \
+  -l /srv/jmeter-results/write-100threads/results.jtl \
+  -j /srv/jmeter-results/write-100threads/jmeter.log
+```
+
+Membuat report HTML:
+
+```bash
+jmeter \
+  -g /srv/jmeter-results/write-100threads/results.jtl \
+  -o /var/www/jmeter-reports/write-100threads
+```
+
+### Read-heavy workload
+
+Sebelum menjalankan read-heavy test, restore baseline 250k terlebih dahulu:
+
+```bash
+FORCE=1 sh scripts/restore-baseline-250k.sh
+```
+
+Contoh menjalankan read-heavy test dengan random ID dari baseline `1–250000`:
+
+```bash
+jmeter -n \
+  -t /root/jmeter-test/plans/read-only-random-id.jmx \
+  -Jprotocol=http \
+  -Jhost={IP} \
+  -Jport=3000 \
+  -Jthreads=100 \
+  -Jrampup=60 \
+  -Jduration=600 \
+  -Jmax_id=250000 \
+  -l /srv/jmeter-results/read-100threads/results.jtl \
+  -j /srv/jmeter-results/read-100threads/jmeter.log
+```
+
+Membuat report HTML:
+
+```bash
+jmeter \
+  -g /srv/jmeter-results/read-100threads/results.jtl \
+  -o /var/www/jmeter-reports/read-100threads
+```
+
+### Mixed read/write workload
+
+Sebelum menjalankan mixed workload, restore baseline 250k terlebih dahulu:
+
+```bash
+FORCE=1 sh scripts/restore-baseline-250k.sh
+```
+
+Contoh menjalankan mixed read/write test dengan 100 threads, ramp-up 60 detik, durasi total 600 detik, baseline ID sampai 250000, dan read ratio 75%:
+
+```bash
+jmeter -n \
+  -t /root/jmeter-test/plans/mixed-read-write.jmx \
+  -Jprotocol=http \
+  -Jhost={IP} \
+  -Jport=3000 \
+  -Jthreads=100 \
+  -Jrampup=60 \
+  -Jduration=600 \
+  -Jmax_id=250000 \
+  -Jread_percent=75 \
+  -l /srv/jmeter-results/mixed-100threads/results.jtl \
+  -j /srv/jmeter-results/mixed-100threads/jmeter.log
+```
+
+Membuat report HTML:
+
+```bash
+jmeter \
+  -g /srv/jmeter-results/mixed-100threads/results.jtl \
+  -o /var/www/jmeter-reports/mixed-100threads
+```
+
 ## Catatan skenario benchmark
 
 ### Write-heavy
 
-- Mulai dari database kosong atau kondisi yang sudah ditentukan.
+- Mulai dari database kosong.
 - Fokus pada endpoint `POST /api/items`.
-- Jika ingin setiap run benar-benar bersih, gunakan `TRUNCATE TABLE items` atau restore kondisi awal sebelum run berikutnya.
+- Kosongkan tabel sebelum setiap pengulangan run agar hasil antar-run lebih sebanding.
 
 ### Read-heavy
 
 - Restore baseline 250k terlebih dahulu.
 - Gunakan random GET pada ID `1–250000`.
-- Contoh endpoint JMeter:
-
-```text
-/api/items/${__Random(1,250000)}
-```
+- Jangan melakukan write saat pengujian read-only.
 
 ### Mixed read/write
 
 - Restore baseline 250k terlebih dahulu.
-- Untuk pola 80/20, gunakan 80% request read terhadap ID `1–250000` dan 20% request write.
+- Gunakan `-Jmax_id=250000` agar request read tetap mengambil data baseline.
+- Atur rasio read menggunakan `-Jread_percent`. Contoh `-Jread_percent=75` berarti sekitar 75% read dan 25% write.
 - Data hasil write akan memakai ID mulai `250001`, tetapi range read sebaiknya tetap `1–250000` agar working set baca stabil.
 
 ## Catatan benchmark umum
