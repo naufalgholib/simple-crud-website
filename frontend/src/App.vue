@@ -39,12 +39,17 @@ function notify(text) {
 }
 
 async function request(url, options = {}) {
+  const headers = {
+    ...(options.headers || {})
+  };
+
+  if (options.body !== undefined && options.body !== null) {
+    headers['Content-Type'] ??= 'application/json';
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    }
+    headers
   });
 
   if (response.status === 204) return null;
